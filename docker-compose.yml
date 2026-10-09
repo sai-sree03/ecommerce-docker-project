@@ -1,0 +1,97 @@
+services:
+wordpress:
+image: wordpress:php8.3-apache
+restart: unless-stopped
+ports:
+- "8080:80"
+environment:
+WORDPRESS_DB_HOST: db:3306
+WORDPRESS_DB_NAME: ${MYSQL_DATABASE:-ecommerce}
+WORDPRESS_DB_USER: ${MYSQL_USER:-ecommerce_user}
+WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in your .env file}
+volumes:
+- wordpress_data:/var/www/html
+depends_on:
+db:
+condition: service_healthy
+networks:
+- ecommerce
+
+db:
+image: mysql:8.4
+restart: unless-stopped
+environment:
+MYSQL_DATABASE: ${MYSQL_DATABASE:-ecommerce}
+MYSQL_USER: ${MYSQL_USER:-ecommerce_user}
+MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in your .env file}
+MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in your .env file}
+volumes:
+- db_data:/var/lib/mysql
+healthcheck:
+test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+interval: 10s
+timeout: 5s
+retries: 10
+start_period: 30s
+networks:
+- ecommerce
+
+prometheus:
+image: prom/prometheus:latest
+restart: unless-stopped
+ports:
+- "9090:9090"
+volumes:
+- ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+- prometheus_data:/prometheus
+command:
+- "--config.file=/etc/prometheus/prometheus.yml"
+- "--storage.tsdb.path=/prometheus"
+depends_on:
+- cadvisor
+networks:
+- ecommerce
+- monitoring
+
+grafana:
+image: grafana/grafana-oss:latest
+restart: unless-stopped
+ports:
+- "3000:3000"
+environment:
+GF_SECURITY_ADMIN_USER: admin
+GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in your .env file}
+volumes:
+- grafana_data:/var/lib/grafana
+- ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+depends_on:
+- prometheus
+networks:
+- monitoring
+
+cadvisor:
+image: gcr.io/cadvisor/cadvisor:latest
+restart: unless-stopped
+privileged: true
+devices:
+- /dev/kmsg
+volumes:
+- /:/rootfs:ro
+- /var/run:/var/run:ro
+- /sys:/sys:ro
+- /var/lib/docker:/var/lib/docker:ro
+- /dev/disk:/dev/disk:ro
+expose:
+- "8080"
+networks:
+- monitoring
+
+volumes:
+wordpress_data:
+db_data:
+prometheus_data:
+grafana_data:
+
+networks:
+ecommerce:
+monitoring:
